@@ -34,6 +34,11 @@ Import the extension from TER (TYPO3 Extension Repository)
 There is no configuration for this extension.
 Just save the content (tt_content) record to sync the cropAreas over all cropVariants
 
+## Support
+
+Free Support is available via [GitHub Issue Tracker](https://github.com/jweiland-net/sync_crop_areas/issues).
+
+For commercial support, please contact us at [support@jweiland.net](support@jweiland.net).
 
 <!-- MARKDOWN LINKS & IMAGES -->
 
