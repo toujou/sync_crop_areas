@@ -13,8 +13,10 @@ namespace JWeiland\SyncCropAreas\Helper;
 
 use TYPO3\CMS\Backend\Form\Utility\FormEngineUtility;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\Configuration\FlexForm\FlexFormTools;
 use TYPO3\CMS\Core\Utility\ArrayUtility;
 use TYPO3\CMS\Core\Utility\Exception\MissingArrayPathException;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * Use this helper to get a full merged TCA base configuration for a specific TCA column
@@ -82,8 +84,47 @@ class TcaHelper
         );
     }
 
-    public function getMergedCropVariants(string $table, string $column, int $pageUid = 0, string $type = ''): array
+    public function getMergedCropVariants(string $table, string $column, int $pageUid = 0, string $type = '', int $contentElementUid): array
     {
+        $enabledFields = $this->getEnabledTcaFieldsForCType($type);
+
+        // Check for flex form
+        if (!in_array($column, $enabledFields, true)) {
+            $record = BackendUtility::getRecord($table, $contentElementUid);
+
+            foreach ($enabledFields as $fieldName => $fieldTca) {
+                if ('flex' === $fieldTca['config']['type']) {
+                    $flexFormTools = GeneralUtility::makeInstance(FlexFormTools::class);
+                    $dataStructureIdentifier = $flexFormTools->getDataStructureIdentifier(
+                        $fieldTca,
+                        $table,
+                        $fieldName,
+                        $record
+                    );
+                    $dataStructure = $flexFormTools->parseDataStructureByIdentifier($dataStructureIdentifier);
+
+                    foreach ($dataStructure['sheets'] as $sheet) {
+                        $element = $sheet['ROOT']['el'][$column] ?? null;
+
+                        if (null !== $element && 'file' === $element['config']['type']) {
+                            return array_replace_recursive(
+                                $this->getCropVariants(
+                                    'sys_file_reference',
+                                    'crop',
+                                    'config/cropVariants',
+                                    $pageUid
+                                ),
+                                (arraY)ArrayUtility::getValueByPath(
+                                    $element,
+                                    'config/overrideChildTca/columns/crop/config/cropVariants'
+                                )
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         return array_replace_recursive(
             $this->getCropVariants(
                 'sys_file_reference',
@@ -150,61 +191,6 @@ class TcaHelper
 
         // In case of "pages" column "doktype" can be int. Cast to string
         return $record[$typeColumn] ? (string)$record[$typeColumn] : '';
-    }
-
-    /**
-     * Returns the column names of a given table which have a relation to sys_file_reference configured in TCA.
-     */
-    public function getColumnsWithFileReferences(string $table): array
-    {
-        $columnsWithFileReferences = [];
-        foreach ($this->getTcaConfiguredColumnNamesOfTable($table) as $column) {
-            try {
-                $foreignTable = (string)ArrayUtility::getValueByPath(
-                    $GLOBALS,
-                    sprintf(
-                        'TCA/%s/columns/%s/config/foreign_table',
-                        $table,
-                        $column
-                    )
-                );
-            } catch (MissingArrayPathException $missingArrayPathException) {
-                // Segment of path could not be found in array
-                continue;
-            } catch (\RuntimeException $runtimeException) {
-                // $path is empty
-                continue;
-            } catch (\InvalidArgumentException $invalidArgumentException) {
-                // $path is not string or array
-                continue;
-            }
-
-            if ($foreignTable === '') {
-                continue;
-            }
-
-            if ($foreignTable !== 'sys_file_reference') {
-                continue;
-            }
-
-            $columnsWithFileReferences[] = $column;
-        }
-
-        return $columnsWithFileReferences;
-    }
-
-    protected function getTcaConfiguredColumnNamesOfTable(string $table): array
-    {
-        $tableConfiguration = $this->getTableConfiguration($table);
-        if ($tableConfiguration === []) {
-            return [];
-        }
-
-        if (!array_key_exists('columns', $tableConfiguration)) {
-            return [];
-        }
-
-        return is_array($tableConfiguration['columns']) ? array_keys($tableConfiguration['columns']) : [];
     }
 
     /**
@@ -281,25 +267,6 @@ class TcaHelper
     }
 
     /**
-     * If the BaseConfiguration is a relation to another table, it is possible to
-     *
-     * @ToDo: Make public. Implement something to merge config of sys_file_references
-     *
-     * @param string $column
-     * @param string $type
-     * @param array $tableConfiguration
-     * @return array
-     */
-    protected function getTableTypeBaseConfigurationForCrop(
-        string $column,
-        string $type,
-        array $tableConfiguration
-    ): array {
-        $baseConfiguration = $this->getTableTypeBaseConfigurationForColumn($column, $type, $tableConfiguration);
-        return [];
-    }
-
-    /**
      * Returns just the type-individual BaseConfiguration for table and column.
      * $GLOBALS['TCA'][$table]['types'][$type]['columnsOverrides'][$column]
      */
@@ -356,5 +323,50 @@ class TcaHelper
         }
 
         return is_array($GLOBALS['TCA'][$table]) ? $GLOBALS['TCA'][$table] : [];
+    }
+
+    public function getEnabledTcaFieldsForCType(string $CType): array
+    {
+        $tca = $GLOBALS['TCA']['tt_content'] ?? [];
+        if (!isset($tca['types'][$CType])) {
+            return [];
+        }
+
+        $fields = [];
+        $typeConfig = $tca['types'][$CType];
+        $showitem = $typeConfig['showitem'] ?? '';
+
+        $items = array_filter(array_map('trim', explode(',', $showitem)));
+
+        foreach ($items as $item) {
+            // Skip dividers
+            if ('--div--' === $item) {
+                continue;
+            }
+
+            // Split by semicolon: fieldName;Label;Palette;Extra
+            $parts = array_map('trim', explode(';', $item));
+            $field = $parts[0] ?? null;
+            $paletteName = $parts[2] ?? null;
+
+            // Add the field if it exists in TCA
+            if ($field && isset($tca['columns'][$field])) {
+                $fields[$field] = $tca['columns'][$field];
+            }
+
+            // If palette exists, expand it
+            if ($paletteName && isset($tca['palettes'][$paletteName]['showitem'])) {
+                $paletteItems = array_filter(array_map('trim', explode(',', $tca['palettes'][$paletteName]['showitem'])));
+                foreach ($paletteItems as $pItem) {
+                    $pParts = array_map('trim', explode(';', $pItem));
+                    $pField = $pParts[0] ?? null;
+                    if ($pField && isset($tca['columns'][$pField])) {
+                        $fields[$pField] = $tca['columns'][$pField];
+                    }
+                }
+            }
+        }
+
+        return $fields;
     }
 }
