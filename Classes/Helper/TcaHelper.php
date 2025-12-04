@@ -84,7 +84,7 @@ class TcaHelper
         );
     }
 
-    public function getMergedCropVariants(string $table, string $column, int $pageUid = 0, string $type = '', int $contentElementUid): array
+    public function getMergedCropVariants(string $table, string $column, int $pageUid = 0, string $type = '', int $contentElementUid = 0): array
     {
         $enabledFields = $this->getEnabledTcaFieldsForCType($type);
 
