@@ -96,9 +96,10 @@ class UpdateCropVariantsService
             $sysFileReference['fieldname'],
             $sysFileReference['pid'],
             $this->tcaHelper->getTypeOfRecord(
-                $this->getForeignRecord($sysFileReference['tablenames'], (int)$sysFileReference['uid_foreign']),
+                $this->getForeignRecord($sysFileReference['tablenames'], (int) $sysFileReference['uid_foreign']),
                 $sysFileReference['tablenames']
-            )
+            ),
+            (int) $sysFileReference['uid_foreign']
         );
 
         try {
@@ -119,8 +120,8 @@ class UpdateCropVariantsService
         $updatedCropVariants = [];
         foreach ($persistedCropVariants as $name => $persistedCropVariantConfiguration) {
             if (
-                $persistedCropVariantConfiguration !== $firstPersistedCropVariantConfiguration
-                && $this->isSelectedRatioAvailableInCurrentCropVariantConfiguration(
+                $persistedCropVariantConfiguration !== $firstPersistedCropVariantConfiguration &&
+                $this->isSelectedRatioAvailableInCurrentCropVariantConfiguration(
                     $persistedCropVariantConfiguration,
                     $firstPersistedCropVariantConfiguration
                 )
@@ -137,7 +138,7 @@ class UpdateCropVariantsService
             $updatedCropVariants
         );
 
-        $sysFileReference['crop'] = (string)$updatedCropVariantCollection;
+        $sysFileReference['crop'] = (string) $updatedCropVariantCollection;
 
         return $sysFileReference;
     }
